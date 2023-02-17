@@ -1,0 +1,16 @@
+[package]
+name = "mono_inject"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# rustup run stable-i686-pc-windows-gnu cargo build
+[dependencies]
+widestring = "1.0.2"
+winapi = { version = "0.3", features = ["winuser", "memoryapi", "processthreadsapi", "handleapi", "libloaderapi", "winnt", "dbghelp", "psapi", "winbase", "namedpipeapi", "securitybaseapi", "tlhelp32"] }
+libc = "0.2.115"
+log = "0.4"
+simple_logger = "4.0.0"
+argparse = "0.2.2"
+[build]
+target = "i686-pc-windows-gnu"
