@@ -36,13 +36,10 @@ struct LoaderArguments {
     pub loader_pipename: [libc::c_char; 250],
 }
 
-// pub type t_function_pointer_library_wants =
-//     ::std::option::Option<unsafe extern "C" fn(argument: *const MonoDomain)>;
 fn arg_to_string(bytes: &[i8]) -> String {
     let mut name = String::from("");
     for n in bytes {
         let new = *n as u8;
-        //println!("{}", *n);
         if *n == 0 {
             break;
         }
@@ -51,11 +48,7 @@ fn arg_to_string(bytes: &[i8]) -> String {
     println!("arg_to_string: {}", name);
 
     return name;
-    // let conv = unsafe { CStr::from_bytes_with_nul(std::mem::transmute(bytes)) }.unwrap();
-    // return String::from(conv.to_str().unwrap());
-    //unsafe { std::str::from_utf8_unchecked(std::mem::transmute(bytes)) }.to_string()
-    // use CStr to remove [,0,0,0,0,0] at end
-} // crashes when pipe name (Is risky)
+} 
 
 #[no_mangle]
 pub extern "C" fn inject(loader_args: *mut libc::c_void) {
@@ -116,21 +109,13 @@ fn payload(
     let mono_module = unsafe { GetModuleHandleA(handle_str.as_ptr()) }; // mono-2.0-bdwgc.dll
 
     println!("mono_module address: {:?}", mono_module);
-    // first
-
+    
     let c1 = CString::new("mono_get_root_domain").unwrap();
     let get_root_domain_addr = unsafe { GetProcAddress(mono_module, c1.as_ptr()) };
     println!(
         "get_root_domain address {:?}",
         get_root_domain_addr as usize
     );
-
-    //(::std::ptr::read(get_root_domain_addr as *const T as *const *const T)
-    // let get_root_domain_m = unsafe {
-    //     std::mem::transmute::<*const usize, types::t_mono_get_root_domain>(
-    //         get_root_domain_addr as *const usize,
-    //     )
-    // };
 
     let get_root_domain_m: types::TMonoGetRootDomain =
         unsafe { std::mem::transmute(get_root_domain_addr) };
@@ -142,25 +127,17 @@ fn payload(
         println!("Failed to get root domain.");
         return String::from("Failed to get root domain.");
     }
-    // third
-
     let c2 = CString::new("mono_thread_attach").unwrap();
     let thread_attach_addr = unsafe { GetProcAddress(mono_module, c2.as_ptr()) };
 
     println!("mono_thread_attach_addr {:?}", thread_attach_addr as usize);
 
-    // let thread_attach_m = unsafe {
-    //     std::mem::transmute::<*const usize, types::t_mono_thread_attach>(
-    //         thread_attach_addr as *const usize,
-    //     )
-    // };
     let thread_attach_m: types::TMonoThreadAttach =
         unsafe { std::mem::transmute(thread_attach_addr) };
 
     let thread_attach_res = thread_attach_m(mono_domain);
     println!("thread attacched - result: {:?}", thread_attach_res);
 
-    // second
     let c3 = CString::new("mono_assembly_open").unwrap();
     let assembly_open_addr = unsafe { GetProcAddress(mono_module, c3.as_ptr()) };
 
@@ -172,11 +149,10 @@ fn payload(
         )
     };
 
-    let cx1 = CString::new(dll).unwrap(); // FAILS WHEN PASSED AS ARGUMENT CONV STRING FIX
+    let cx1 = CString::new(dll).unwrap(); 
     let mono_assembly = assembly_open_m(cx1.as_ptr(), std::ptr::null_mut());
     println!("assembly_open result: {:?}", mono_assembly);
-
-    // four
+    
     let c4 = CString::new("mono_assembly_get_image").unwrap();
     let assembly_get_image_addr = unsafe { GetProcAddress(mono_module, c4.as_ptr()) };
 
@@ -185,18 +161,12 @@ fn payload(
         assembly_get_image_addr as usize
     );
 
-    // let assembly_get_image_m = unsafe {
-    //     std::mem::transmute::<*const usize, types::t_mono_assembly_get_image>(
-    //         assembly_get_image_addr as *const usize,
-    //     )
-    // };
-
     let assembly_get_image_m: types::TMonoAssemblyGetImage =
         unsafe { std::mem::transmute(assembly_get_image_addr) };
 
     let mono_image = assembly_get_image_m(mono_assembly);
     println!("mono_image result: {:?}", mono_image);
-    // five
+
     let c5 = CString::new("mono_class_from_name").unwrap();
     let class_from_name_addr = unsafe { GetProcAddress(mono_module, c5.as_ptr()) };
 
@@ -210,7 +180,7 @@ fn payload(
     let mono_class = class_from_name_m(mono_image, nn.as_c_str().as_ptr(), nn2.as_c_str().as_ptr());
 
     println!("mono_class result: {:?}", mono_class);
-    // five
+
     let c5 = CString::new("mono_class_get_method_from_name").unwrap();
     let class_get_method_from_name_addr = unsafe { GetProcAddress(mono_module, c5.as_ptr()) };
 
