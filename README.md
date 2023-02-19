@@ -20,7 +20,7 @@ rustup run stable-i686-pc-windows-msvc cargo build
 
 2. Copy the dll
 
-The injector requires the dll file to call certain (mono_inject will inject mono_lib.dll). 
+The injector requires the dll file to call mono functions (mono_inject will inject mono_lib.dll). 
 Ensure sure that mono_lib.dll and mono_inject.exe are in the same directory.
 
 After building the dll from mono_load, copy and paste it in the same directory as mono_inject. 
