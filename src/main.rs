@@ -73,7 +73,7 @@ fn inject(proc: HANDLE, dll: &Path) -> io::Result<()> {
     })?;
 
     let path_len = (full_path.len() * 2) + 1;
-    // allocate space for the path inside target proc
+
     let dll_addr = unsafe {
         wmem::VirtualAllocEx(
             proc,
@@ -179,8 +179,7 @@ fn main() -> io::Result<()> {
         .init()
         .unwrap();
 
-    //log::warn!("This is an example message.");
-    //let pid = proc::get_pid(&String::from("ravenfield.exe"));
+
     let pid = proc::get_pid(&target);
 
     if pid == 0 {
@@ -197,15 +196,15 @@ fn main() -> io::Result<()> {
     let mono_load_path = get_mono_loader().unwrap();
     inject(
         h_proc,
-        &mono_load_path, // important  derDLL.dll"
+        &mono_load_path, 
     )
     .unwrap();
 
     let pipe_name = format!("{}{}", "\\\\.\\pipe\\MLPIPE_", pid);
 
     let mono_load_path_str = String::from_str(mono_load_path.to_str().unwrap()).unwrap();
-    let mono_module = String::from("mono_lib.dll"); // ".dll"  .// HERE LATETS GET FROM MONO LIB  | ALSO ADD ERRORS CHECK
-    let mono_inject_func = String::from("inject"); // Inject
+    let mono_module = String::from("mono_lib.dll"); 
+    let mono_inject_func = String::from("inject"); 
 
     let named_pipe = CString::new(pipe_name.clone()).unwrap();
 
@@ -228,12 +227,6 @@ fn main() -> io::Result<()> {
         loader_mono: arr5,
         loader_pipename: arr6,
     };
-
-    // log::debug!("{:?}", loader_args.dll_path);
-    // log::debug!("{:?}", loader_args.loader_namespace);
-    // log::debug!("{:?}", loader_args.loader_classname);
-    // log::debug!("{:?}", loader_args.loader_methodname);
-    // log::debug!("{:?}", loader_args.loader_pipename);
 
     let address_params = unsafe {
         wmem::VirtualAllocEx(
@@ -325,7 +318,6 @@ fn main() -> io::Result<()> {
         println!("Connected to named pipe");
     }
     log::debug!("h_pipe suc");
-    //let mut buf = vec![0u8; PIPE_BUFFER_SIZE.try_into().unwrap()];
 
     let mut exit_loop = 0;
     while exit_loop == 0 {
@@ -337,7 +329,7 @@ fn main() -> io::Result<()> {
             ReadFile(
                 h_pipe,
                 buffer.as_mut_ptr() as *mut _,
-                1024, //buf.len().try_into().unwrap(),
+                1024, 
                 &mut bytes_read as *mut _,
                 std::ptr::null_mut(),
             )
@@ -350,13 +342,9 @@ fn main() -> io::Result<()> {
             println!("{}", message);
 
             // let msg: String = buf.into_iter().collect();
-            // println!("message {}", msg);
             exit_loop = 1;
         }
     }
-
-    // let bytes_read: usize = bytes_read.try_into().unwrap_or(0);
-    //werr!(res_read == 0);
 
     Ok(())
 }
