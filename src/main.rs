@@ -1,37 +1,22 @@
-use _core::mem::MaybeUninit;
 use _core::str::FromStr;
-use std::ffi::CStr;
 use std::ffi::CString;
 use std::io;
 use std::io::Error;
 use std::io::ErrorKind;
-use std::io::Read;
 use std::mem;
 use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
 use widestring::WideCString;
-use winapi::um::handleapi::CloseHandle;
 
 use _core::ffi::c_void;
-use winapi::shared::minwindef::BOOL;
 use winapi::shared::minwindef::DWORD;
 use winapi::shared::minwindef::FALSE;
-use winapi::shared::minwindef::HMODULE;
-use winapi::shared::minwindef::MAX_PATH;
-use winapi::shared::ntdef::LPWSTR;
-use winapi::shared::ntdef::NULL;
-use winapi::shared::ntdef::TRUE;
-use winapi::um::dbghelp::SymEnumSymbolsW;
+
 use winapi::um::fileapi::ReadFile;
 use winapi::um::handleapi as whandle;
-use winapi::um::handleapi::INVALID_HANDLE_VALUE;
 use winapi::um::libloaderapi as wload;
-use winapi::um::libloaderapi::GetModuleHandleA;
-use winapi::um::libloaderapi::GetProcAddress;
-use winapi::um::libloaderapi::LoadLibraryExA;
-use winapi::um::libloaderapi::LoadLibraryExW;
-use winapi::um::libloaderapi::DONT_RESOLVE_DLL_REFERENCES;
+
 use winapi::um::memoryapi as wmem;
 use winapi::um::minwinbase::LPTHREAD_START_ROUTINE;
 use winapi::um::minwinbase::SECURITY_ATTRIBUTES;
@@ -39,40 +24,29 @@ use winapi::um::namedpipeapi::ConnectNamedPipe;
 use winapi::um::processthreadsapi as wproc;
 use winapi::um::processthreadsapi::CreateRemoteThread;
 use winapi::um::processthreadsapi::OpenProcess;
-use winapi::um::psapi::EnumProcessModules;
-use winapi::um::psapi::GetModuleFileNameExW;
+
 use winapi::um::securitybaseapi::InitializeSecurityDescriptor;
 use winapi::um::securitybaseapi::SetSecurityDescriptorDacl;
-use winapi::um::tlhelp32::{
-    CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS,
-};
 
-use std::slice;
 use winapi::um::winbase::CreateNamedPipeA;
 use winapi::um::winbase::LocalAlloc;
-use winapi::um::winbase::FILE_FLAG_FIRST_PIPE_INSTANCE;
 use winapi::um::winbase::PIPE_ACCESS_DUPLEX;
 use winapi::um::winbase::PIPE_READMODE_BYTE;
 use winapi::um::winbase::PIPE_TYPE_BYTE;
 use winapi::um::winbase::PIPE_WAIT;
 use winapi::um::winnt::HANDLE;
-use winapi::um::winnt::IMAGE_DIRECTORY_ENTRY_EXPORT;
-use winapi::um::winnt::IMAGE_DOS_HEADER;
-use winapi::um::winnt::IMAGE_EXPORT_DIRECTORY;
-use winapi::um::winnt::IMAGE_NT_HEADERS;
-use winapi::um::winnt::IMAGE_NT_HEADERS64;
-use winapi::um::winnt::PIMAGE_DOS_HEADER;
-use winapi::um::winnt::PIMAGE_EXPORT_DIRECTORY;
-use winapi::um::winnt::PIMAGE_NT_HEADERS;
+
 use winapi::um::winnt::PROCESS_ALL_ACCESS;
-use winapi::um::winnt::PSECURITY_DESCRIPTOR;
+
 use winapi::um::winnt::SECURITY_DESCRIPTOR_MIN_LENGTH;
 use winapi::um::winnt::SECURITY_DESCRIPTOR_REVISION;
 use winapi::um::winnt::{MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE};
 use winapi::*;
 
-use argparse::{ArgumentParser, Store, StoreTrue};
+use argparse::{ArgumentParser, Store};
+use log::LevelFilter;
 use simple_logger::SimpleLogger;
+
 mod defs;
 mod proc;
 mod utils;
@@ -82,7 +56,7 @@ macro_rules! werr {
     ($cond:expr) => {
         if $cond {
             let e = std::io::Error::last_os_error();
-            println!("windows error: {:?}", e);
+            log::error!("windows error: {:?}", e);
             return Err(e);
         }
     };
@@ -111,7 +85,7 @@ fn inject(proc: HANDLE, dll: &Path) -> io::Result<()> {
     };
 
     werr!(dll_addr.is_null());
-    println!("allocated remote memory @ {:?}", dll_addr);
+    log::debug!("inject - allocated remote memory @ {:?}", dll_addr);
 
     let res = unsafe {
         // write dll inside target process
@@ -131,7 +105,7 @@ fn inject(proc: HANDLE, dll: &Path) -> io::Result<()> {
 
     let loadlib = CString::new("LoadLibraryW").unwrap();
     let loadlib = unsafe { wload::GetProcAddress(krnl, loadlib.as_ptr()) };
-    println!("found LoadLibraryW for injection at {:?}", loadlib);
+    log::debug!("found LoadLibraryW for injection at {:?}", loadlib);
 
     let hthread = unsafe {
         wproc::CreateRemoteThread(
@@ -146,7 +120,7 @@ fn inject(proc: HANDLE, dll: &Path) -> io::Result<()> {
     };
 
     werr!(hthread.is_null());
-    println!("spawned remote thread at {:?}", hthread);
+    log::debug!("spawned remote thread at {:?}", hthread);
     unsafe {
         whandle::CloseHandle(hthread);
     }
@@ -159,7 +133,7 @@ fn get_mono_loader() -> io::Result<PathBuf> {
     let dir = exe.parent().unwrap();
 
     let loc = dir.join("mono_lib.dll").to_path_buf();
-    println!("location: {}", loc.display());
+    log::debug!("mono lib location: {}", loc.display());
     Ok(loc)
 }
 
@@ -169,11 +143,14 @@ fn main() -> io::Result<()> {
     let mut namespace_arg = String::new();
     let mut class_arg = String::new();
     let mut method_arg = String::new();
-    let mut mono_module_arg = String::from("mono.dll");
+    let mut mono_module_arg = String::from("mono.dll"); // or mono-2.0-bdwgc.dll
     {
         let mut ap = ArgumentParser::new();
-        ap.refer(&mut mono_module_arg)
-            .add_option(&["--module"], Store, "mono.dll is default");
+        ap.refer(&mut mono_module_arg).add_option(
+            &["--module"],
+            Store,
+            "mono.dll is default / try mono-2.0-bdwgc.dll otherwise",
+        );
         ap.refer(&mut target)
             .add_option(&["--process"], Store, "target process e.g ravenfield.exe")
             .required();
@@ -194,7 +171,14 @@ fn main() -> io::Result<()> {
         ap.parse_args_or_exit();
     }
 
-    SimpleLogger::new().init().unwrap();
+    //SimpleLogger::new().init().unwrap();
+
+    SimpleLogger::new()
+        .with_level(LevelFilter::Off)
+        .with_module_level("mono_inject", LevelFilter::Warn)
+        .init()
+        .unwrap();
+
     //log::warn!("This is an example message.");
     //let pid = proc::get_pid(&String::from("ravenfield.exe"));
     let pid = proc::get_pid(&target);
@@ -209,7 +193,7 @@ fn main() -> io::Result<()> {
     let h_proc = unsafe { OpenProcess(PROCESS_ALL_ACCESS, 0, pid) };
 
     log::debug!("hproc value {:p}", h_proc);
-
+    println!("Found process, attempting to inject loader");
     let mono_load_path = get_mono_loader().unwrap();
     inject(
         h_proc,
@@ -232,7 +216,8 @@ fn main() -> io::Result<()> {
     let arr2 = utils::str_arr(&namespace_arg);
     let arr3 = utils::str_arr(&class_arg);
     let arr4 = utils::str_arr(&method_arg);
-    let arr5 = utils::str_arr(&pipe_name.as_str());
+    let arr5 = utils::str_arr(&mono_module_arg);
+    let arr6 = utils::str_arr(&pipe_name.as_str());
 
     //let x2: Vec<char> = String::from("RavenfieldHax").chars().collect();
     let mut loader_args = defs::LoaderArguments {
@@ -240,14 +225,15 @@ fn main() -> io::Result<()> {
         loader_namespace: arr2,
         loader_classname: arr3,
         loader_methodname: arr4,
-        loader_pipename: arr5,
+        loader_mono: arr5,
+        loader_pipename: arr6,
     };
 
-    println!("{:?}", loader_args.dll_path);
-    println!("{:?}", loader_args.loader_namespace);
-    println!("{:?}", loader_args.loader_classname);
-    println!("{:?}", loader_args.loader_methodname);
-    println!("{:?}", loader_args.loader_pipename);
+    // log::debug!("{:?}", loader_args.dll_path);
+    // log::debug!("{:?}", loader_args.loader_namespace);
+    // log::debug!("{:?}", loader_args.loader_classname);
+    // log::debug!("{:?}", loader_args.loader_methodname);
+    // log::debug!("{:?}", loader_args.loader_pipename);
 
     let address_params = unsafe {
         wmem::VirtualAllocEx(
@@ -260,7 +246,7 @@ fn main() -> io::Result<()> {
     };
 
     werr!(address_params.is_null());
-    println!(
+    log::debug!(
         "(address_params) allocated remote memory @ {:?}",
         address_params
     );
@@ -278,18 +264,18 @@ fn main() -> io::Result<()> {
         )
     };
 
-    println!("WriteProcess memory loader params: {:?}", res);
+    log::debug!("WriteProcess memory loader params: {:?}", res);
     werr!(res == 0);
     println!("Parameter struct written to target..");
 
     let func_offset_loader = proc::mono_loader_func(mono_load_path_str, mono_inject_func).unwrap();
-    println!("Funcoffset of Loader?: {:?}", func_offset_loader);
+    log::debug!("Funcoffset of Loader?: {:?}", func_offset_loader);
     let injected_loader_base = proc::module_handles(h_proc, &mono_module);
-    println!("injectedLoader module remote {}", injected_loader_base);
+    log::debug!("injectedLoader module remote {}", injected_loader_base);
     // mono_loader_func_address_final
     let target_fun_addr = injected_loader_base + func_offset_loader;
 
-    println!("Lpthreadstart is {:x}", target_fun_addr);
+    log::debug!("Lpthreadstart is {:x}", target_fun_addr);
     unsafe {
         CreateRemoteThread(
             h_proc,
@@ -302,7 +288,7 @@ fn main() -> io::Result<()> {
         );
     }
 
-    println!("Injected  example");
+    println!("Created remote thread");
 
     let p_security_desc = unsafe { LocalAlloc(0, SECURITY_DESCRIPTOR_MIN_LENGTH) };
 
@@ -310,7 +296,7 @@ fn main() -> io::Result<()> {
 
     unsafe { SetSecurityDescriptorDacl(p_security_desc, 1, std::ptr::null_mut(), FALSE) };
 
-    println!("pSecurityDesc - {:p}", p_security_desc);
+    log::debug!("pSecurityDesc - {:p}", p_security_desc);
 
     let security_attributes = SECURITY_ATTRIBUTES {
         nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as DWORD,
@@ -332,13 +318,13 @@ fn main() -> io::Result<()> {
     };
 
     werr!(h_pipe.is_null());
-    println!("h_pipe value: {:?}", h_pipe);
+    log::debug!("h_pipe value: {:?}", h_pipe);
     let ress = unsafe { ConnectNamedPipe(h_pipe, std::ptr::null_mut()) };
 
     if ress != 0 {
-        println!("connected to named pipe");
+        println!("Connected to named pipe");
     }
-    println!("h_pipe suc");
+    log::debug!("h_pipe suc");
     //let mut buf = vec![0u8; PIPE_BUFFER_SIZE.try_into().unwrap()];
 
     let mut exit_loop = 0;

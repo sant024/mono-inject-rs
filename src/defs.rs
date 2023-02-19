@@ -6,5 +6,6 @@ pub struct LoaderArguments {
     pub loader_namespace: ArrType,
     pub loader_classname: ArrType,
     pub loader_methodname: ArrType,
+    pub loader_mono: ArrType,
     pub loader_pipename: ArrType,
 }
